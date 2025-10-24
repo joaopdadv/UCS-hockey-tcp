@@ -1,34 +1,61 @@
-import socket 
+import socket
+import threading
 import sys
-import struct
-    
-#------------------------------------------------------------------
-if  ( len(sys.argv) != 2 ):
-	print('%s <porta>' % sys.argv[0])
-	sys.exit(0)
-	
-ip = ''
+
+if len(sys.argv) != 2:
+    print(f"Uso: python {sys.argv[0]} <port>")
+    sys.exit(1)
+
+host = ''
 porta = int(sys.argv[1])
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.bind((ip, porta)) 
-sock.listen(10)
+BUFFER_SIZE = 8
 
-try:
+
+# Monta strings a partir dos dados recebidos
+def get_lines(conn):
+    current_line = ""
     while True:
-            conn, cliente = sock.accept()
-            print("Conexão de", cliente)
-            try:
-                while True:
-                    dados = conn.recv(4)
-                    if dados is None:
-                        break
-                    n = struct.unpack('!I', dados)[0]
-                    print(n)
-            finally:
-                conn.close()
-except KeyboardInterrupt:
-    print("\nCtrl + C detectado.")
-finally:
-    sock.close()
-    print("Servidor encerrado.")
+        data = conn.recv(BUFFER_SIZE)
+        if not data:
+            if current_line:
+                yield current_line
+            break
+
+        decoded = data.decode("utf-8", errors="ignore")
+        parts = decoded.split("\n")
+
+        for part in parts[:-1]:
+            yield current_line + part
+            current_line = ""
+
+        current_line += parts[-1]
+
+
+def handle_client(conn, addr):
+    print(f"Conexão aceita de {addr}")
+    try:
+        for line in get_lines(conn):
+            print(line)
+    except Exception as e:
+        print(f"Erro ao lidar com {addr}: {e}")
+    finally:
+        conn.close()
+        print(f"Conexão com {addr} fechada")
+
+
+def main():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, porta))
+        s.listen()
+        print(f"Observando TCP na porta :{porta}")
+
+        while True:
+            conn, addr = s.accept()
+            # cada cliente em thread separada
+            thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
+            thread.start()
+
+
+if __name__ == "__main__":
+    main()
