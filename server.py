@@ -1,3 +1,4 @@
+import json
 import socket
 import threading
 import sys
@@ -31,7 +32,6 @@ def get_lines(conn):
 
         current_line += parts[-1]
 
-
 def handle_client(conn, addr):
     print(f"Conexão aceita de {addr}")
     try:
@@ -43,6 +43,17 @@ def handle_client(conn, addr):
         conn.close()
         print(f"Conexão com {addr} fechada")
 
+def dict_to_json_string(data: dict) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=4)
+
+def json_string_to_dict(json_str: str) -> dict:
+    return json.loads(json_str)
+
+
+
+# TODO: Deve receber json de dados do jogador
+# TODO: Processar jogo
+# TODO: retornar json do estado do jogo para conexões
 
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
