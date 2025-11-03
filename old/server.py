@@ -2,14 +2,15 @@ import json
 import socket
 import threading
 import sys
+from collections import namedtuple
 import time
-import math
 from config import (
     TICK, GameState, PlayerInput, HEIGHT, WIDTH,
     PADDLE_WIDTH, PADDLE_HEIGHT, BALL_SIZE, BALL_SPEED,
     GOAL_HEIGHT, GOAL_Y, PADDLE_DISTANCE_FROM_GOAL,
     HUD_HEIGHT, GOAL_INSET, GOAL_BAR_LENGTH, GOAL_THICKNESS, TIME_LIMIT_SECONDS
 )
+import math
 
 clients = []
 client_players = {}  # mapeia conexão para número do jogador (1 ou 2)
@@ -21,7 +22,7 @@ game_state = GameState(
     p1y=FIELD_CENTER_Y,
     p2y=FIELD_CENTER_Y,
     ballx=WIDTH//2, bally=FIELD_CENTER_Y,
-    ballvx=0.0, ballvy=0.0,
+    ballvx=0, ballvy=0,
     score1=0, score2=0,
     game_started=False,
     time_left=TIME_LIMIT_SECONDS,
@@ -115,13 +116,9 @@ def handle_client(conn, addr):
 def dict_to_json_string(data: dict) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
 
-def reset_ball(direction: int = 1):
-    """Reinicia a bola no centro.
-    direction: 1 = para a direita, -1 = para a esquerda
-    """
-    speed = float(BALL_SPEED)
-    vx = speed if direction >= 0 else -speed
-    return WIDTH//2, FIELD_CENTER_Y, vx, 0.0
+def reset_ball():
+    """Reinicia a bola no centro indo para a direita."""
+    return WIDTH//2, FIELD_CENTER_Y, BALL_SPEED, 0.0
 
 def check_paddle_collision(ball_x, ball_y, ball_vx, ball_vy, paddle_x, paddle_y):
     """Verifica colisão da bola com paddle e retorna nova velocidade (com ângulo)."""
@@ -215,9 +212,6 @@ def game_loop():
                     ball_vy = 0.0
                     print("Fim de jogo!")
 
-                # Salva posição anterior para detectar cruzamento da linha de gol
-                prev_x, prev_y = ball_x, ball_y
-
                 # Mover bola
                 if not game_over:
                     ball_x += ball_vx
@@ -231,79 +225,34 @@ def game_loop():
                         ball_vy = -abs(ball_vy)
                         ball_y = HEIGHT - BALL_SIZE//2
                     
-                    # ---------- Gols em C (espessura real + parede atrás) ----------
+                    # ---------- Gols em C (lógica com espessura e rebate externo) ----------
                     HALF_TH = GOAL_THICKNESS / 2.0
                     HALF_B = BALL_SIZE / 2.0
                     
                     TOP_BAR_Y = GOAL_Y
                     BOT_BAR_Y = GOAL_Y + GOAL_HEIGHT
 
-                    # 1) Verificação de GOL por CRUZAMENTO da linha de gol (só de FRENTE p/ TRÁS)
-                    #    Esquerda: cruza quando a face esquerda passa de x>GOAL_INSET para x<=GOAL_INSET
-                    prev_left = prev_x - HALF_B
-                    new_left  = ball_x - HALF_B
-                    prev_right = prev_x + HALF_B
-                    new_right  = ball_x + HALF_B
-
-
-                    # Linha invisível do gol, deslocada 10px para dentro
-                    # Puxada 'pra fora' do C (lado de campo). Use poucos px (ex.: 6.0)
-                    GOAL_LINE_OFFSET_OUT = 13.0
-                    # Para o gol da ESQUERDA (C abre para a direita): linha fica um pouco À DIREITA do poste
-                    LINE_LEFT_X  = GOAL_INSET + GOAL_LINE_OFFSET_OUT
-                    # Para o gol da DIREITA (C abre para a esquerda): linha fica um pouco À ESQUERDA do poste
-                    LINE_RIGHT_X = (WIDTH - GOAL_INSET) - GOAL_LINE_OFFSET_OUT
-
-
-                    left_cross  = (prev_left  > LINE_LEFT_X)  and (new_left  <= LINE_LEFT_X)
-                    right_cross = (prev_right < LINE_RIGHT_X) and (new_right >= LINE_RIGHT_X)
-
-                    if left_cross:
-                        denom = (new_left - prev_left)
-                        t = (LINE_LEFT_X - prev_left) / denom if denom != 0 else 0.0
-                        t = max(0.0, min(1.0, t))
-                        y_at_cross = prev_y + t * (ball_y - prev_y)
-                        if GOAL_Y <= y_at_cross <= GOAL_Y + GOAL_HEIGHT:
-                            # Gol do Jogador 2 (direita)
-                            score2 += 1
-                            ball_x, ball_y, ball_vx, ball_vy = reset_ball(-1)  # reinicia para a esquerda (quem tomou foi o Jogador 1)
-                            print(f"Gol do Jogador 2! Placar: {score1} x {score2}")
-                    elif right_cross:
-                        denom = (new_right - prev_right)
-                        t = (LINE_RIGHT_X - prev_right) / denom if denom != 0 else 0.0
-                        t = max(0.0, min(1.0, t))
-                        y_at_cross = prev_y + t * (ball_y - prev_y)
-                        if GOAL_Y <= y_at_cross <= GOAL_Y + GOAL_HEIGHT:
-                            # Gol do Jogador 1 (esquerda)
-                            score1 += 1
-                            ball_x, ball_y, ball_vx, ball_vy = reset_ball(1)  # reinicia para a direita (quem tomou foi o Jogador 2)
-                            print(f"Gol do Jogador 1! Placar: {score1} x {score2}")
+                    # 1) Verificação de GOL
+                    if ball_x - HALF_B <= GOAL_INSET and GOAL_Y <= ball_y <= GOAL_Y + GOAL_HEIGHT:
+                        # Gol do Jogador 2 (direita)
+                        score2 += 1
+                        ball_x, ball_y, ball_vx, ball_vy = reset_ball()
+                        print(f"Gol do Jogador 2! Placar: {score1} x {score2}")
+                    elif ball_x + HALF_B >= WIDTH - GOAL_INSET and GOAL_Y <= ball_y <= GOAL_Y + GOAL_HEIGHT:
+                        # Gol do Jogador 1 (esquerda)
+                        score1 += 1
+                        ball_x, ball_y, ball_vx, ball_vy = reset_ball()
+                        print(f"Gol do Jogador 1! Placar: {score1} x {score2}")
                     else:
-                        # 2) Rebate nas BARRAS superior/inferior do "C" (por dentro e por fora)
-                        #    NOVO: Rebate na HASTE VERTICAL dos gols (por dentro e por fora)
-                        #    Evita que a bola atravesse a parte de trás (externa) do gol.
-                        LEFT_POST_X  = GOAL_INSET
-                        RIGHT_POST_X = (WIDTH - GOAL_INSET)
-#    Checagem do POSTE ESQUERDO (apenas face EXTERNA)
-                        if (GOAL_Y - HALF_TH) <= ball_y <= (GOAL_Y + GOAL_HEIGHT + HALF_TH):
-                            if abs(ball_x - LEFT_POST_X) <= (HALF_TH + HALF_B):
-                                if ball_x <= LEFT_POST_X:
-                                    # Fora do gol (lado esquerdo): rebate para a esquerda
-                                    ball_vx = -abs(ball_vx)
-                                    ball_x = LEFT_POST_X - HALF_TH - HALF_B
-
+                        # 2) Rebate nas HASTES VERTICAIS (traves), por fora/por dentro (fora da boca)
+                        if (ball_x - HALF_B) <= (GOAL_INSET + HALF_TH) and not (GOAL_Y <= ball_y <= GOAL_Y + GOAL_HEIGHT):
+                            ball_vx = abs(ball_vx)
+                            ball_x = GOAL_INSET + HALF_TH + HALF_B
+                        if (ball_x + HALF_B) >= (WIDTH - GOAL_INSET - HALF_TH) and not (GOAL_Y <= ball_y <= GOAL_Y + GOAL_HEIGHT):
+                            ball_vx = -abs(ball_vx)
+                            ball_x = WIDTH - GOAL_INSET - HALF_TH - HALF_B
                         
-                        #    Checagem do POSTE DIREITO (apenas face EXTERNA)
-                        if (GOAL_Y - HALF_TH) <= ball_y <= (GOAL_Y + GOAL_HEIGHT + HALF_TH):
-                            if abs(ball_x - RIGHT_POST_X) <= (HALF_TH + HALF_B):
-                                if ball_x >= RIGHT_POST_X:
-                                    # Fora do gol (lado direito): rebate para a direita
-                                    ball_vx = abs(ball_vx)
-                                    ball_x = RIGHT_POST_X + HALF_TH + HALF_B
-
-
-
-                        #    Região X coberta pela barra esquerda
+                        # 3) Rebate nas BARRAS SUPERIOR/INFERIOR do "C" (ambos os lados)
                         if (GOAL_INSET - HALF_TH) <= ball_x <= (GOAL_INSET + GOAL_BAR_LENGTH + HALF_TH):
                             # Topo esquerdo
                             if abs(ball_y - TOP_BAR_Y) <= (HALF_TH + HALF_B):
@@ -322,7 +271,6 @@ def game_loop():
                                     ball_vy = abs(ball_vy)
                                     ball_y = BOT_BAR_Y + HALF_TH + HALF_B
                         
-                        #    Região X coberta pela barra direita
                         if (WIDTH - GOAL_INSET - GOAL_BAR_LENGTH - HALF_TH) <= ball_x <= (WIDTH - GOAL_INSET + HALF_TH):
                             if abs(ball_y - TOP_BAR_Y) <= (HALF_TH + HALF_B):
                                 if ball_y <= TOP_BAR_Y:
@@ -338,116 +286,6 @@ def game_loop():
                                 else:
                                     ball_vy = abs(ball_vy)
                                     ball_y = BOT_BAR_Y + HALF_TH + HALF_B
-
-                        
-
-                    # 2.1) Cantos das barras (evita teleporte ao bater na ponta)
-
-                    # Trata cada ponta como círculo de raio HALF_TH; a bola tem raio HALF_B.
-
-                    def _corner_bounce(cx, cy, ball_x, ball_y, ball_vx, ball_vy):
-
-                        dx = ball_x - cx
-
-                        dy = ball_y - cy
-
-                        dist2 = dx*dx + dy*dy
-
-                        min_d = (HALF_TH + HALF_B)
-
-                        min_d2 = min_d * min_d
-
-                        if dist2 < min_d2:
-
-                            dist = math.sqrt(dist2) if dist2 > 0 else 1.0
-
-                            nx = dx / dist
-
-                            ny = dy / dist
-
-                            # Reposiciona a bola para fora da sobreposição
-
-                            ball_x = cx + nx * min_d
-
-                            ball_y = cy + ny * min_d
-
-                            # Reflete velocidade se estiver indo em direção ao canto
-
-                            vdotn = ball_vx * nx + ball_vy * ny
-
-                            if vdotn < 0:
-
-                                ball_vx = ball_vx - 2.0 * vdotn * nx
-
-                                ball_vy = ball_vy - 2.0 * vdotn * ny
-
-                            return True, ball_x, ball_y, ball_vx, ball_vy
-
-                        return False, ball_x, ball_y, ball_vx, ball_vy
-
-
-                    # Cantos do gol esquerdo (abre para a direita)
-
-                    left_top_cx  = GOAL_INSET + GOAL_BAR_LENGTH
-
-                    left_top_cy  = TOP_BAR_Y
-
-                    left_bot_cx  = GOAL_INSET + GOAL_BAR_LENGTH
-
-                    left_bot_cy  = BOT_BAR_Y
-
-
-                    # Cantos do gol direito (abre para a esquerda)
-
-                    right_top_cx = (WIDTH - GOAL_INSET) - GOAL_BAR_LENGTH
-
-                    right_top_cy = TOP_BAR_Y
-
-                    right_bot_cx = (WIDTH - GOAL_INSET) - GOAL_BAR_LENGTH
-
-                    right_bot_cy = BOT_BAR_Y
-
-
-                    changed, ball_x, ball_y, ball_vx, ball_vy = _corner_bounce(left_top_cx,  left_top_cy,  ball_x, ball_y, ball_vx, ball_vy)
-
-                    if not changed:
-
-                        changed, ball_x, ball_y, ball_vx, ball_vy = _corner_bounce(left_bot_cx,  left_bot_cy,  ball_x, ball_y, ball_vx, ball_vy)
-
-                    if not changed:
-
-                        changed, ball_x, ball_y, ball_vx, ball_vy = _corner_bounce(right_top_cx, right_top_cy, ball_x, ball_y, ball_vx, ball_vy)
-
-                    if not changed:
-
-                        changed, ball_x, ball_y, ball_vx, ball_vy = _corner_bounce(right_bot_cx, right_bot_cy, ball_x, ball_y, ball_vx, ball_vy)
-
-                        # 1b) Failsafe: se após colisões a bola já estiver ALÉM da linha de gol, conte o gol
-                        # Somente se cruzou DA FRENTE PARA DENTRO neste tick (usa prev_x e a direção atual).
-                        mouth_top = TOP_BAR_Y + HALF_TH
-                        mouth_bot = BOT_BAR_Y - HALF_TH
-                        if mouth_top <= ball_y <= mouth_bot:
-                            prev_left_face  = prev_x - HALF_B
-                            prev_right_face = prev_x + HALF_B
-                            # Esquerda: bola inteira passou da linha e estava à frente antes (indo para a esquerda)
-                            if (ball_vx < 0) and (prev_right_face > LINE_LEFT_X) and ((ball_x + HALF_B) <= LINE_LEFT_X):
-                                score2 += 1
-                                ball_x, ball_y, ball_vx, ball_vy = reset_ball(-1)  # recomeça para a esquerda
-                                print(f"Gol (failsafe) do Jogador 2! Placar: {score1} x {score2}")
-                            # Direita: bola inteira passou da linha e estava à frente antes (indo para a direita)
-                            elif (ball_vx > 0) and (prev_left_face < LINE_RIGHT_X) and ((ball_x - HALF_B) >= LINE_RIGHT_X):
-                                score1 += 1
-                                ball_x, ball_y, ball_vx, ball_vy = reset_ball(1)   # recomeça para a direita
-                                print(f"Gol (failsafe) do Jogador 1! Placar: {score1} x {score2}")
-
-# 3) PAREDE ATRÁS DOS GOLS (nas bordas da tela) — SEM exceção
-                        #    (sempre rebate no fundo, mesmo se a bola estiver alinhada com a boca)
-                        if (ball_x - HALF_B) <= 0:
-                            ball_vx = abs(ball_vx)
-                            ball_x = HALF_B
-                        if (ball_x + HALF_B) >= WIDTH:
-                            ball_vx = -abs(ball_vx)
-                            ball_x = WIDTH - HALF_B
 
                     # 4) Colisão com PADDLES (sempre verificar ambos)
                     _c, ball_x, ball_vx, ball_vy = check_paddle_collision(
@@ -484,7 +322,8 @@ def game_loop():
         for conn in clients:
             try:
                 conn.sendall((msg + "\\n").encode("utf-8"))
-            except Exception:
+            except Exception as e:
+                # desconectar silenciosamente
                 disconnected_clients.append(conn)
         
         # Remover clientes desconectados

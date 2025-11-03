@@ -16,9 +16,10 @@ HUD_HEIGHT = 60  # altura da faixa superior
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 GRAY = (128, 128, 128)
-RED = (255, 0, 0)   # compat.
-BLUE = (0, 0, 255)  # compat.
+RED = (255, 0, 0)   # (mantida para compatibilidade)
+BLUE = (0, 0, 255)  # (mantida para compatibilidade)
 
+# >>> Novas cores usadas pelo cliente <<<
 LIGHT_BLUE = (173, 216, 230)  # fundo do campo
 PINK = (255, 105, 180)        # jogador esquerdo
 YELLOW = (255, 255, 0)        # jogador direito
@@ -33,12 +34,12 @@ BALL_SPEED = 6
 FIELD_HEIGHT = HEIGHT - HUD_HEIGHT
 
 # Gols em formato de "C" (dentro do campo, separados da parede do fundo)
-GOAL_INSET = 70           # distância da parede lateral até a "haste" vertical do C
+GOAL_INSET = 40           # distância da parede lateral até a "haste" vertical do C
 GOAL_BAR_LENGTH = 48      # comprimento das barras superior/inferior do C
-GOAL_THICKNESS = 12       # espessura visual das linhas do gol
+GOAL_THICKNESS = 18       # espessura visual das linhas do gol (deixei mais grossa a seu pedido)
 
-GOAL_HEIGHT = int(FIELD_HEIGHT * 0.33)              # 33% da altura útil
-GOAL_Y = HUD_HEIGHT + (FIELD_HEIGHT - GOAL_HEIGHT) // 2  # centralizado verticalmente
+GOAL_HEIGHT = int(FIELD_HEIGHT * 0.33)                  # 33% da altura útil
+GOAL_Y = HUD_HEIGHT + (FIELD_HEIGHT - GOAL_HEIGHT) // 2 # centralizado verticalmente
 
 # Posição dos paddles (um pouco à frente do gol)
 PADDLE_DISTANCE_FROM_GOAL = GOAL_INSET + 70

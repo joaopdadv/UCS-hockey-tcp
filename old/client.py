@@ -69,6 +69,7 @@ def receive_game_state():
                             break
                 if end is None:
                     # aguardar mais dados
+                    # mantém o buffer até próxima iteração
                     if start > 0:
                         buffer = buffer[start:]
                     break
@@ -77,6 +78,7 @@ def receive_game_state():
                     buffer = buffer[end+1:]
                     game_state_data = json_string_to_dict(json_str)
                 except json.JSONDecodeError:
+                    # descarta este bloco e continua
                     buffer = buffer[end+1:]
                     continue
         except Exception as e:
@@ -101,18 +103,12 @@ def draw_hud(score1, score2, time_left, game_started, game_over):
     # linha de separação
     pygame.draw.line(screen, WHITE, (0, HUD_HEIGHT), (WIDTH, HUD_HEIGHT), 2)
 
-        # placar centralizado (cores por jogador e tamanho maior)
-    left_score_surf = score_font.render(str(score1), True, PINK)
-    sep_surf = score_font.render(" - ", True, WHITE)
-    right_score_surf = score_font.render(str(score2), True, YELLOW)
-    total_w = left_score_surf.get_width() + sep_surf.get_width() + right_score_surf.get_width()
-    x = WIDTH//2 - total_w//2
-    y = HUD_HEIGHT//2 - left_score_surf.get_height()//2
-    screen.blit(left_score_surf, (x, y))
-    screen.blit(sep_surf, (x + left_score_surf.get_width(), y))
-    screen.blit(right_score_surf, (x + left_score_surf.get_width() + sep_surf.get_width(), y))
+    # placar centralizado
+    score_text = font.render(f"{score1} - {score2}", True, WHITE)
+    score_rect = score_text.get_rect(center=(WIDTH//2, HUD_HEIGHT//2))
+    screen.blit(score_text, score_rect)
 
-# tempo no canto direito
+    # tempo no canto direito
     total_secs = int(max(0, time_left))
     minutes = total_secs // 60
     seconds = total_secs % 60
@@ -237,8 +233,6 @@ clock = pygame.time.Clock()
 # Inicializar fontes
 font = pygame.font.Font(None, FONT_SIZE)
 small_font = pygame.font.Font(None, SMALL_FONT_SIZE)
-SCORE_FONT_SIZE = int(FONT_SIZE * 1.5)
-score_font = pygame.font.Font(None, SCORE_FONT_SIZE)
 
 # Iniciar thread para receber dados do servidor
 receive_thread = threading.Thread(target=receive_game_state, daemon=True)
